@@ -8,7 +8,8 @@ app = modal.App("lease-pinecone-system")
 
 image = modal.Image.debian_slim().pip_install([
     "pinecone-client==3.0.0",
-    "sentence-transformers==2.2.2"
+    "sentence-transformers==2.2.2",
+    "fastapi"
 ])
 
 pinecone_secret = modal.Secret.from_name("pinecone-secret")
