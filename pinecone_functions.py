@@ -10,11 +10,10 @@ app = modal.App("lease-pinecone-system")
 # Pinecone and sentence transformers image
 image = modal.Image.debian_slim().pip_install([
     "pinecone-client==3.0.0",
-    "sentence-transformers==2.2.2",
-    "openai==1.3.0"
+    "sentence-transformers==2.2.2"
 ])
 
-# Pinecone secret (make sure you've created this)
+# Pinecone secret
 pinecone_secret = modal.Secret.from_name("pinecone-secret")
 
 @app.function(
@@ -209,58 +208,39 @@ def query_documents(
     secrets=[pinecone_secret],
     timeout=300
 )
-def generate_answer(
+def generate_simple_answer(
     question: str,
     relevant_chunks: List[Dict[str, Any]],
     context_metadata: Dict[str, Any]
 ):
-    """Generate AI answer using OpenAI with page references"""
-    import openai
-    import os
-    
+    """Generate simple answer from relevant chunks without AI"""
     try:
-        # Initialize OpenAI (you'll need to add this secret too)
-        client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        # Simple text-based answer generation
+        best_chunks = sorted(relevant_chunks, key=lambda x: x['score'], reverse=True)[:3]
         
-        # Prepare context from chunks
-        context_text = ""
+        answer_parts = []
         page_refs = []
         
-        for chunk in relevant_chunks:
-            context_text += f"\n[Page {chunk['page_number']} of {chunk['filename']}]\n{chunk['text']}\n"
-            page_refs.append({
-                "page": chunk['page_number'],
-                "filename": chunk['filename'],
-                "relevance_score": chunk['score']
-            })
+        for chunk in best_chunks:
+            if chunk['score'] > 0.7:  # High confidence
+                answer_parts.append(f"From page {chunk['page_number']}: {chunk['text'][:200]}...")
+                page_refs.append({
+                    "page": chunk['page_number'],
+                    "filename": chunk['filename'],
+                    "relevance_score": chunk['score']
+                })
         
-        # Create prompt
-        prompt = f"""Based on the following lease document excerpts, answer the question: "{question}"
-
-Context from lease documents:
-{context_text}
-
-Please provide a clear, accurate answer based on the information provided. If the answer references specific information, mention the page number and document name.
-
-Question: {question}"""
-
-        # Generate response
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant that analyzes lease documents. Always reference page numbers when citing specific information."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.3
-        )
-        
-        answer = response.choices[0].message.content
+        if not answer_parts:
+            answer = "No highly relevant information found for this question."
+            confidence = "low"
+        else:
+            answer = "\n\n".join(answer_parts)
+            confidence = "high" if len(answer_parts) > 1 else "medium"
         
         return {
             "status": "success",
             "answer": answer,
-            "confidence": "high" if len(relevant_chunks) > 2 else "medium",
+            "confidence": confidence,
             "sources": context_metadata.get("sources", []),
             "page_references": page_refs,
             "question": question
@@ -301,7 +281,7 @@ def query_endpoint(item: Dict[str, Any]):
 @modal.web_endpoint(method="POST")
 def answer_endpoint(item: Dict[str, Any]):
     """Web endpoint for generating answers"""
-    return generate_answer.remote(
+    return generate_simple_answer.remote(
         question=item["question"],
         relevant_chunks=item["relevant_chunks"],
         context_metadata=item["context_metadata"]
