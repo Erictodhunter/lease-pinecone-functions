@@ -1,0 +1,35 @@
+name: Deploy to Modal
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger button
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install Modal
+      run: |
+        pip install modal-client
+        
+    - name: Deploy to Modal
+      env:
+        MODAL_TOKEN: ${{ secrets.MODAL_TOKEN }}
+      run: |
+        python -c "
+import os
+token = os.environ['MODAL_TOKEN']
+with open(os.path.expanduser('~/.modal-token'), 'w') as f:
+    f.write(token)
+"
+        modal deploy pinecone_functions.py
