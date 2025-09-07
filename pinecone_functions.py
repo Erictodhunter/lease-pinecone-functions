@@ -4,16 +4,13 @@ from typing import List, Dict, Any
 import hashlib
 from datetime import datetime
 
-# Create Modal app
 app = modal.App("lease-pinecone-system")
 
-# Pinecone and sentence transformers image
 image = modal.Image.debian_slim().pip_install([
     "pinecone-client==3.0.0",
     "sentence-transformers==2.2.2"
 ])
 
-# Pinecone secret
 pinecone_secret = modal.Secret.from_name("pinecone-secret")
 
 @app.function(
@@ -27,26 +24,21 @@ def store_in_pinecone(
     chunks_with_pages: List[Dict[str, Any]],
     filename: str
 ):
-    """Store processed document chunks in Pinecone with page references"""
     import pinecone
     from sentence_transformers import SentenceTransformer
     import os
     
     try:
-        # Initialize Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = pinecone.Pinecone(api_key=api_key)
         
-        # Connect to index
         index_name = "lease-documents"
         index = pc.Index(index_name)
         
-        # Initialize embedding model
         model = SentenceTransformer('all-MiniLM-L6-v2')
         
         vectors_to_upsert = []
         
-        # Process each chunk
         for i, chunk_data in enumerate(chunks_with_pages):
             chunk_text = chunk_data.get('text', '')
             page_number = chunk_data.get('page_number', 1)
@@ -54,22 +46,19 @@ def store_in_pinecone(
             if not chunk_text.strip():
                 continue
                 
-            # Generate embedding
             embedding = model.encode(chunk_text).tolist()
             
-            # Create unique vector ID
             vector_id = f"{document_id}_chunk_{i}_{hashlib.md5(chunk_text.encode()).hexdigest()[:8]}"
             
-            # Prepare metadata
             metadata = {
                 "document_id": document_id,
                 "filename": filename,
                 "chunk_index": i,
                 "page_number": page_number,
-                "text": chunk_text[:1000],  # Truncate for metadata
+                "text": chunk_text[:1000],
                 "chunk_type": chunk_data.get('chunk_type', 'content'),
                 "created_at": datetime.now().isoformat(),
-                "processed_data": json.dumps(processed_data)[:500]  # Truncate
+                "processed_data": json.dumps(processed_data)[:500]
             }
             
             vectors_to_upsert.append({
@@ -78,7 +67,6 @@ def store_in_pinecone(
                 "metadata": metadata
             })
         
-        # Upsert vectors in batches
         batch_size = 100
         total_vectors = len(vectors_to_upsert)
         
@@ -114,32 +102,25 @@ def query_documents(
     top_k: int = 5,
     include_page_refs: bool = True
 ):
-    """Query documents in Pinecone and return relevant chunks with page references"""
     import pinecone
     from sentence_transformers import SentenceTransformer
     import os
     
     try:
-        # Initialize Pinecone
         api_key = os.environ["PINECONE_API_KEY"]
         pc = pinecone.Pinecone(api_key=api_key)
         
-        # Connect to index
         index_name = "lease-documents"
         index = pc.Index(index_name)
         
-        # Initialize embedding model
         model = SentenceTransformer('all-MiniLM-L6-v2')
         
-        # Generate query embedding
         query_embedding = model.encode(question).tolist()
         
-        # Prepare filter
         filter_dict = {}
         if document_filter:
             filter_dict["filename"] = {"$eq": document_filter}
         
-        # Query Pinecone
         query_results = index.query(
             vector=query_embedding,
             top_k=top_k,
@@ -147,7 +128,6 @@ def query_documents(
             filter=filter_dict if filter_dict else None
         )
         
-        # Process results
         relevant_chunks = []
         context_metadata = {
             "sources": [],
@@ -169,7 +149,6 @@ def query_documents(
             
             relevant_chunks.append(chunk_info)
             
-            # Collect metadata
             context_metadata["sources"].append({
                 "filename": metadata.get("filename", ""),
                 "page": metadata.get("page_number", 1),
@@ -184,7 +163,6 @@ def query_documents(
             
             context_metadata["documents"].add(metadata.get("filename", ""))
         
-        # Convert set to list for JSON serialization
         context_metadata["documents"] = list(context_metadata["documents"])
         
         return {
@@ -213,16 +191,14 @@ def generate_simple_answer(
     relevant_chunks: List[Dict[str, Any]],
     context_metadata: Dict[str, Any]
 ):
-    """Generate simple answer from relevant chunks without AI"""
     try:
-        # Simple text-based answer generation
         best_chunks = sorted(relevant_chunks, key=lambda x: x['score'], reverse=True)[:3]
         
         answer_parts = []
         page_refs = []
         
         for chunk in best_chunks:
-            if chunk['score'] > 0.7:  # High confidence
+            if chunk['score'] > 0.7:
                 answer_parts.append(f"From page {chunk['page_number']}: {chunk['text'][:200]}...")
                 page_refs.append({
                     "page": chunk['page_number'],
@@ -254,11 +230,9 @@ def generate_simple_answer(
             "question": question
         }
 
-# Web endpoints
 @app.function(image=image, secrets=[pinecone_secret])
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def store_endpoint(item: Dict[str, Any]):
-    """Web endpoint for storing documents"""
     return store_in_pinecone.remote(
         document_id=item["document_id"],
         processed_data=item["processed_data"],
@@ -267,9 +241,8 @@ def store_endpoint(item: Dict[str, Any]):
     )
 
 @app.function(image=image, secrets=[pinecone_secret])
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def query_endpoint(item: Dict[str, Any]):
-    """Web endpoint for querying documents"""
     return query_documents.remote(
         question=item["question"],
         document_filter=item.get("document_filter"),
@@ -278,9 +251,8 @@ def query_endpoint(item: Dict[str, Any]):
     )
 
 @app.function(image=image, secrets=[pinecone_secret])
-@modal.web_endpoint(method="POST")
+@modal.fastapi_endpoint(method="POST")
 def answer_endpoint(item: Dict[str, Any]):
-    """Web endpoint for generating answers"""
     return generate_simple_answer.remote(
         question=item["question"],
         relevant_chunks=item["relevant_chunks"],
