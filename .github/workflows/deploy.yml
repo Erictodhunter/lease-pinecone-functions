@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       
       - name: Install Modal
         run: pip install modal
@@ -25,34 +25,5 @@ jobs:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
         run: |
-          echo $MODAL_TOKEN_ID | modal token set --token-id-stdin
-          echo $MODAL_TOKEN_SECRET | modal token set --token-secret-stdin
+          modal token set --token-id "$MODAL_TOKEN_ID" --token-secret "$MODAL_TOKEN_SECRET"
           modal deploy pinecone_functions.py
-```
-
-## FILE 3: `README.md`
-
-```markdown
-# Lease Pinecone Functions
-
-Modal deployment for lease document processing with Pinecone.
-
-## Deploy
-
-Click "Actions" → "Deploy to Modal" → "Run workflow" → "Run workflow"
-
-## Setup
-
-1. Add GitHub secret `MODAL_TOKEN` with value: `ws-9wcqzm0pWU5qo3D73Lbcwf`
-2. Create Pinecone secret in Modal:
-   ```
-   modal secret create pinecone-secret PINECONE_API_KEY=pcsk_51ASg4_87NEy2rwveagtPCrSKKE4isaH8ez8mmQgCCbUm6bZQCPz3kGHnR7rvGLLTzFJrJ
-   ```
-3. Click Deploy button in GitHub Actions
-
-## Endpoints
-
-After deployment:
-- Store: `https://eric-18--lease-pinecone-system-store-endpoint.modal.run`
-- Query: `https://eric-18--lease-pinecone-system-query-endpoint.modal.run`
-- Answer: `https://eric-18--lease-pinecone-system-answer-endpoint.modal.run`
